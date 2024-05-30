@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>Messages</title>
+    <style>
+        .message {
+            display: flex;
+            align-items: flex-start;
+            margin: 10px 0;
+        }
+        .message.sender {
+            justify-content: flex-end;
+        }
+        .message.receiver {
+            justify-content: flex-start;
+        }
+        .message.sender .message-content-wrapper {
+            flex-direction: row-reverse;
+        }
+        .message.receiver .message-content-wrapper {
+            flex-direction: row;
+        }
+        .message-content-wrapper {
+            display: flex;
+            align-items: center;
+        }
+        .message-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+        .message-member {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .message-content {
+            padding: 10px;
+            border-radius: 10px;
+            max-width: 60%;
+            word-wrap: break-word;
+        }
+        .message.sender .message-content {
+            background-color: #d1ffd1;
+            text-align: right;
+        }
+        .message.receiver .message-content {
+            background-color: #f1f1f1;
+            text-align: left;
+        }
+        .message-img {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        .message.sender .message-img {
+            margin-left: 10px;
+            margin-right: 0;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.4.0/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+<h1>Messages</h1>
+<div>
+    <ul id="messageList">
+        <li th:each="message : ${messages}" th:class="${message.sender} == ${currentUser} ? 'message sender' : 'message receiver'">
+            <div class="message-content-wrapper">
+                <img th:src="@{/images/profile.png}" alt="Profile Image" class="message-img">
+                <div>
+                    <div class="message-member" th:text="${message.member.username}">Message member</div>
+                    <div class="message-content" th:text="${message.content}">Message Content</div>
+                </div>
+            </div>
+        </li>
+    </ul>
+</div>
+<div>
+    <input type="text" id="message" placeholder="Type a message..."/>
+    <button onclick="sendMessage()">Send</button>
+</div>
+
+<script type="text/javascript">
+    var stompClient = null;
+    var chatRoomId = /*[[${chatRoomId}]]*/ '[[${chatRoomId}]]';
+    var currentUser = /*[[${currentUser}]]*/ '[[${currentUser}]]'; // 현재 사용자의 ID
+    var lastMessageTime = null;
+    var lastMessageSender = null;
+
+    function connect() {
+        var socket = new SockJS('/chat');
+        stompClient = Stomp.over(socket);
+        stompClient.connect({}, function (frame) {
+            console.log('Connected: ' + frame);
+            stompClient.subscribe('/topic/messages', function (messageOutput) {
+                showMessage(JSON.parse(messageOutput.body));
+            });
+        });
+    }
+
+    function sendMessage() {
+        var messageContent = $("#message").val();
+        if (messageContent.trim() !== "") {
+            stompClient.send("/app/sendMessage", {}, JSON.stringify({'content': messageContent, 'chatRoomId': chatRoomId, 'sender': currentUser}));
+            $("#message").val('');
+        }
+    }
+
+    function showMessage(message) {
+        if (message.chatRoomId == chatRoomId) {
+            var currentTime = new Date(message.timestamp);
+            var messageClass = message.sender === currentUser ? 'message sender' : 'message receiver';
+            var showProfile = true;
+
+            if (lastMessageTime && lastMessageSender === message.sender) {
+                var timeDifference = (currentTime - lastMessageTime) / 1000;
+                if (timeDifference < 60) {
+                    showProfile = false;
+                }
+            }
+
+            lastMessageTime = currentTime;
+            lastMessageSender = message.sender;
+
+            var messageElement = `
+                <li class='${messageClass}'>
+                    <div class="message-content-wrapper">
+                        ${showProfile ? `<img src="/images/profile.png" alt="Profile Image" class="message-img">` : ''}
+                        <div>
+                            ${showProfile ? `<div class="message-member">${message.sender}</div>` : ''}
+                            <div class="message-content">${message.content}</div>
+                            <div class="message-time">${formatTime(currentTime)}</div>
+                        </div>
+                    </div>
+                </li>`;
+            $("#messageList").append(messageElement);
+        }
+    }
+
+    function formatTime(date) {
+        var hours = date.getHours();
+        var minutes = date.getMinutes();
+        var ampm = hours >= 12 ? 'PM' : 'AM';
+        hours = hours % 12;
+        hours = hours ? hours : 12; // the hour '0' should be '12'
+        minutes = minutes < 10 ? '0' + minutes : minutes;
+        var strTime = hours + ':' + minutes + ' ' + ampm;
+        return strTime;
+    }
+
+    $(document).ready(function() {
+        connect();
+    });
+</script>
+</body>
+</html>
+
